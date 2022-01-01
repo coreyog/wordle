@@ -1,6 +1,6 @@
 module github.com/coreyog/wordle
 
-go 1.0
+go 1.16
 
 require (
 	github.com/coreyog/statux v0.0.0-20200310012422-4fe0ca760fcb
