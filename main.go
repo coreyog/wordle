@@ -81,7 +81,7 @@ func main() {
 	// pick word
 	rand.Seed(time.Now().UnixNano())
 	word = wordList[rand.Intn(len(wordList))]
-	fmt.Println(word) // debugging
+	// fmt.Println(word) // debugging
 
 	if args.HardMode {
 		fmt.Println("Hard mode enabled. Guesses must use all revealed (green) hints.")
