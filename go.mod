@@ -5,5 +5,6 @@ go 1.16
 require (
 	github.com/coreyog/statux v0.0.0-20200310012422-4fe0ca760fcb
 	github.com/fatih/color v1.13.0
+	github.com/jessevdk/go-flags v1.5.0
 	github.com/mattn/go-tty v0.0.3
 )
