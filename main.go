@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	_ "embed"
 	"encoding/json"
@@ -31,14 +32,36 @@ const (
 	KeyCodeMacBackspace = 127
 )
 
+type KeyHint byte
+type ColorFunc func(string, ...interface{}) string
+
+const (
+	KeyHintUnknown KeyHint = iota
+	KeyHintNotInWord
+	KeyHintSomewhere
+	KeyHintLocated
+)
+
+var hintColorFns = map[KeyHint]ColorFunc{
+	KeyHintUnknown:   fmt.Sprintf,
+	KeyHintNotInWord: color.RedString,
+	KeyHintSomewhere: color.YellowString,
+	KeyHintLocated:   color.GreenString,
+}
+
 var currentGuess = 0
 
 //go:embed words.txt
 var rawWordList string
 
+//go:embed VERSION
+var version string
+
 var wordList []string
 var word string
 var discovered []bool = make([]bool, WordLength)
+
+var keyboard map[rune]KeyHint
 
 type GameStats struct {
 	TotalGames     int   `json:"total_games"`
@@ -75,13 +98,21 @@ func main() {
 		return
 	}
 
-	// prepare word list
-	wordList = strings.Split(rawWordList, "\n")
+	// parse word list deterministically even if compiled on windows
+	scanner := bufio.NewScanner(bytes.NewBuffer([]byte(rawWordList)))
+	scanner.Split(bufio.ScanLines)
+
+	wordList = make([]string, 0, 2315)
+	for scanner.Scan() {
+		wordList = append(wordList, scanner.Text())
+	}
 
 	// pick word
 	rand.Seed(time.Now().UnixNano())
 	word = wordList[rand.Intn(len(wordList))]
-	// fmt.Println(word) // debugging
+	// fmt.Println(word)	// debugging
+
+	initKeyboard()
 
 	if args.HardMode {
 		fmt.Println("Hard mode enabled. Guesses must use all revealed (green) hints.")
@@ -101,7 +132,7 @@ func main() {
 	}()
 
 	// prepare output
-	stat, err := statux.New(TotalGuesses + 1)
+	stat, err := statux.New(TotalGuesses + 4) // +1 for "status" line, +3 for keyboard
 	if err != nil {
 		panic(err)
 	}
@@ -136,11 +167,13 @@ func main() {
 	// print the initial game state
 	for i := 0; i < TotalGuesses; i++ {
 		if i == 0 {
-			_, _ = stat.WriteString(i, "█ _ _ _ _")
+			_, _ = stat.WriteString(i, "     █ _ _ _ _")
 		} else {
-			_, _ = stat.WriteString(i, "_ _ _ _ _")
+			_, _ = stat.WriteString(i, "     _ _ _ _ _")
 		}
 	}
+
+	printKeyboard(stat)
 
 	// start the game
 	for { // main loop
@@ -178,6 +211,8 @@ func main() {
 
 			// show hints
 			_, _ = stat.WriteString(currentGuess, formatGuess(guess, true))
+
+			printKeyboard(stat)
 
 			if currentGuess == 0 {
 				// just submitted the first guess, this game officially counts
@@ -246,9 +281,36 @@ func main() {
 	gamestats.print()
 }
 
+func initKeyboard() {
+	keyboard = map[rune]KeyHint{}
+
+	for i := 'A'; i <= 'Z'; i++ {
+		keyboard[rune(i)] = KeyHintUnknown
+	}
+}
+
+func printKeyboard(stat *statux.Statux) {
+	rows := []string{
+		"QWERTYUIOP",
+		"ASDFGHJKL",
+		"ZXCVBNM",
+	}
+
+	for i, row := range rows {
+		letters := make([]string, len(row))
+		for j, key := range row {
+			sprintf := hintColorFns[keyboard[key]]
+			letters[j] = sprintf(string(key))
+		}
+
+		lineNumber := TotalGuesses + 1 + i
+		_, _ = stat.WriteString(lineNumber, strings.Repeat(" ", i)+strings.Join(letters, " "))
+	}
+}
+
 func formatGuess(guess string, clr bool) string {
 	if guess == "" {
-		return "█ _ _ _ _"
+		return "     █ _ _ _ _"
 	}
 
 	// map and remove correct guesses
@@ -268,9 +330,13 @@ func formatGuess(guess string, clr bool) string {
 			if guess[i] == word[i] {
 				c = color.GreenString
 				discovered[i] = true // not elegant, but SUPER convenient
+				setKeyHint(rune(guess[i]), KeyHintLocated)
 			} else if num := m[guess[i]]; num > 0 {
 				m[guess[i]]--
 				c = color.YellowString
+				setKeyHint(rune(guess[i]), KeyHintSomewhere)
+			} else {
+				setKeyHint(rune(guess[i]), KeyHintNotInWord)
 			}
 
 			slots[i] = c(string(guess[i]))
@@ -290,7 +356,14 @@ func formatGuess(guess string, clr bool) string {
 		}
 	}
 
-	return strings.Join(slots, " ")
+	return "     " + strings.Join(slots, " ")
+}
+
+func setKeyHint(r rune, hint KeyHint) {
+	existing := keyboard[r]
+	if hint > existing {
+		keyboard[r] = hint
+	}
 }
 
 // hardModeEnforcement checks if the guess is valid by hard mode rules: once a
@@ -435,4 +508,6 @@ func printUsage() {
 	fmt.Println("yellow letters are in the answer, green letters are in the answer at that position.")
 	fmt.Println("Hard mode: once a letter is green, all future guesses must include those letters in")
 	fmt.Println("those positions.")
+	fmt.Println()
+	fmt.Printf("Wordle v%s\n", version)
 }
