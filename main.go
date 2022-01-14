@@ -51,25 +51,30 @@ var hintColorFns = map[KeyHint]ColorFunc{
 
 var currentGuess = 0
 
-//go:embed words.txt
-var rawWordList string
+//go:embed good_words.txt
+var rawGoodWordList string
+
+//go:embed bad_words.txt
+var rawBadWordList string
 
 //go:embed VERSION
 var version string
 
 var wordList []string
+var allowedWords []string
 var word string
 var discovered []bool = make([]bool, WordLength)
 
 var keyboard map[rune]KeyHint
 
 type GameStats struct {
-	TotalGames     int   `json:"total_games"`
-	TotalHardGames int   `json:"total_hard_games"`
-	Wins           []int `json:"wins"`
-	HardWins       []int `json:"hard_wins"`
-	Streak         int   `json:"streak"`
-	BestStreak     int   `json:"best_streak"`
+	TotalGames     int        `json:"total_games"`
+	TotalHardGames int        `json:"total_hard_games"`
+	Wins           []int      `json:"wins"`
+	HardWins       []int      `json:"hard_wins"`
+	Streak         int        `json:"streak"`
+	BestStreak     int        `json:"best_streak"`
+	LastDaily      *time.Time `json:"last_daily"`
 }
 
 type Arguments struct {
@@ -99,18 +104,27 @@ func main() {
 	}
 
 	// parse word list deterministically even if compiled on windows
-	scanner := bufio.NewScanner(bytes.NewBuffer([]byte(rawWordList)))
-	scanner.Split(bufio.ScanLines)
+	parseWordLists()
 
-	wordList = make([]string, 0, 2315)
-	for scanner.Scan() {
-		wordList = append(wordList, scanner.Text())
-	}
+	shouldPlayDaily := gamestats.LastDaily == nil || time.Since(*gamestats.LastDaily) > 24*time.Hour
 
 	// pick word
-	rand.Seed(time.Now().UnixNano())
-	word = wordList[rand.Intn(len(wordList))]
-	// fmt.Println(word)	// debugging
+	if shouldPlayDaily {
+		fmt.Println("   Daily Puzzle!")
+
+		now := time.Now().UTC()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+		ms := (today.Unix() * 1000) - 1624082400000
+		index := ms / 864e5
+		word = wordList[index]
+		gamestats.LastDaily = &today
+	} else {
+		rand.Seed(time.Now().UnixNano())
+		word = wordList[rand.Intn(len(wordList))]
+	}
+
+	sort.Strings(wordList)
+	// fmt.Println(word) // debugging
 
 	initKeyboard()
 
@@ -285,7 +299,7 @@ func initKeyboard() {
 	keyboard = map[rune]KeyHint{}
 
 	for i := 'A'; i <= 'Z'; i++ {
-		keyboard[rune(i)] = KeyHintUnknown
+		keyboard[i] = KeyHintUnknown
 	}
 }
 
@@ -298,6 +312,7 @@ func printKeyboard(stat *statux.Statux) {
 
 	for i, row := range rows {
 		letters := make([]string, len(row))
+
 		for j, key := range row {
 			sprintf := hintColorFns[keyboard[key]]
 			letters[j] = sprintf(string(key))
@@ -305,6 +320,24 @@ func printKeyboard(stat *statux.Statux) {
 
 		lineNumber := TotalGuesses + 1 + i
 		_, _ = stat.WriteString(lineNumber, strings.Repeat(" ", i)+strings.Join(letters, " "))
+	}
+}
+
+func parseWordLists() {
+	scanner := bufio.NewScanner(bytes.NewBuffer([]byte(rawGoodWordList)))
+	scanner.Split(bufio.ScanLines)
+
+	wordList = make([]string, 0, 2315)
+	for scanner.Scan() {
+		wordList = append(wordList, scanner.Text())
+	}
+
+	scanner = bufio.NewScanner(bytes.NewBuffer([]byte(rawBadWordList)))
+	scanner.Split(bufio.ScanLines)
+
+	allowedWords = make([]string, 0, 10657)
+	for scanner.Scan() {
+		allowedWords = append(allowedWords, scanner.Text())
 	}
 }
 
@@ -330,10 +363,12 @@ func formatGuess(guess string, clr bool) string {
 			if guess[i] == word[i] {
 				c = color.GreenString
 				discovered[i] = true // not elegant, but SUPER convenient
+
 				setKeyHint(rune(guess[i]), KeyHintLocated)
 			} else if num := m[guess[i]]; num > 0 {
 				m[guess[i]]--
 				c = color.YellowString
+
 				setKeyHint(rune(guess[i]), KeyHintSomewhere)
 			} else {
 				setKeyHint(rune(guess[i]), KeyHintNotInWord)
@@ -391,7 +426,15 @@ func mapString(str string) map[byte]int {
 // isWord checks if a string is a word in the wordlist which makes it a valid guess.
 func isWord(str string) bool {
 	index := sort.SearchStrings(wordList, str)
-	return index < len(wordList) && wordList[index] == str
+	found := index < len(wordList) && wordList[index] == str
+
+	if found {
+		return true
+	}
+
+	index = sort.SearchStrings(allowedWords, str)
+
+	return index < len(allowedWords) && allowedWords[index] == str
 }
 
 func loadGameStats() (gamestats *GameStats) {
