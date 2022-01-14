@@ -13,6 +13,7 @@ import (
 	"os/signal"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -24,12 +25,17 @@ import (
 )
 
 const (
-	TotalGuesses = 6
-	WordLength   = 5
+	TotalGuesses          = 6
+	WordLength            = 5
+	MaxHistogramBarLength = float64(15)
 
 	KeyCodeWinBackspace = 8
 	KeyCodeEnter        = 13
 	KeyCodeMacBackspace = 127
+
+	EmojiNotInWord = '⬛'
+	EmojiSomewhere = '🟨'
+	EmojiLocated   = '🟩'
 )
 
 type KeyHint byte
@@ -66,26 +72,30 @@ var word string
 var discovered []bool = make([]bool, WordLength)
 
 var keyboard map[rune]KeyHint
+var emojiStack []string = []string{}
+var dayOffset int
 
 type GameStats struct {
-	TotalGames     int        `json:"total_games"`
-	TotalHardGames int        `json:"total_hard_games"`
-	Wins           []int      `json:"wins"`
-	HardWins       []int      `json:"hard_wins"`
-	Streak         int        `json:"streak"`
-	BestStreak     int        `json:"best_streak"`
-	LastDaily      *time.Time `json:"last_daily"`
+	TotalGames               int        `json:"total_games"`
+	TotalHardGames           int        `json:"total_hard_games"`
+	Wins                     []int      `json:"wins"`
+	HardWins                 []int      `json:"hard_wins"`
+	Streak                   int        `json:"streak"`
+	BestStreak               int        `json:"best_streak"`
+	LastDaily                *time.Time `json:"last_daily"`
+	ExperimentalEmojiSupport bool       `json:"experimental_emoji_support"`
 }
 
 type Arguments struct {
-	HardMode   bool `short:"H" long:"hard" description:"Play in hard mode"`
-	PrintStats bool `short:"s" long:"stats" description:"Print stats"`
+	HardMode     bool `short:"H" long:"hard" description:"Play in hard mode"`
+	PrintStats   bool `short:"s" long:"stats" description:"Print stats"`
+	PrintVersion bool `short:"v" long:"version" description:"Prints the version"`
 }
 
 var args Arguments
 
 func main() {
-	// parse args
+	// parse flags
 	_, err := flags.Parse(&args)
 	if err != nil {
 		if flags.WroteHelp(err) {
@@ -96,10 +106,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if args.PrintVersion {
+		fmt.Printf("v%s\n", version)
+		os.Exit(0)
+	}
+
 	gamestats := loadGameStats()
 
 	if args.PrintStats {
-		gamestats.print()
+		gamestats.print(nil)
 		return
 	}
 
@@ -108,15 +123,20 @@ func main() {
 
 	shouldPlayDaily := gamestats.LastDaily == nil || time.Since(*gamestats.LastDaily) > 24*time.Hour
 
+	// reconstructed from minified javascript with shortcuts to avoid Go's Dates
+	now := time.Now().UTC()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
+	since := (today.Unix() * 1000) - 1624082400000
+	dailyIndex := int(math.Round(float64(since) / 86400000))
+	dayOffset = dailyIndex - 1 // grab this for emoji Share
+
 	// pick word
 	if shouldPlayDaily {
 		fmt.Println("   Daily Puzzle!")
 
-		now := time.Now().UTC()
-		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-		ms := (today.Unix() * 1000) - 1624082400000
-		index := ms / 864e5
-		word = wordList[index]
+		dailyIndex = dailyIndex % len(wordList) // this isn't part of the original code, I just feel better with it
+		word = wordList[dailyIndex]
+
 		gamestats.LastDaily = &today
 	} else {
 		rand.Seed(time.Now().UnixNano())
@@ -167,13 +187,20 @@ func main() {
 
 	go func() {
 		<-c
-		ty.Close()
+
+		if tyOpen {
+			ty.Close()
+			tyOpen = false
+		}
+
 		stat.Finish()
 
 		if !win {
 			gamestats.Streak = 0
 			_ = gamestats.save()
 		}
+
+		fmt.Printf("\nThe word was %s\n", word)
 
 		os.Exit(0)
 	}()
@@ -219,7 +246,7 @@ func main() {
 
 			// check hard mode requirements
 			if args.HardMode && !hardModeEnforcement(guess) {
-				_, _ = stat.WriteString(currentGuess, formatGuess(guess, false)+" (Hard Mode! Must use revealed hints)")
+				_, _ = stat.WriteString(currentGuess, formatGuess(guess, false)+" (must use revealed hints)")
 				continue
 			}
 
@@ -292,7 +319,7 @@ func main() {
 
 	_ = gamestats.save()
 
-	gamestats.print()
+	gamestats.print(&win)
 }
 
 func initKeyboard() {
@@ -324,14 +351,17 @@ func printKeyboard(stat *statux.Statux) {
 }
 
 func parseWordLists() {
+	// prepare scanner to read embedded memory
 	scanner := bufio.NewScanner(bytes.NewBuffer([]byte(rawGoodWordList)))
 	scanner.Split(bufio.ScanLines)
 
+	// read in words, we already know how many there are
 	wordList = make([]string, 0, 2315)
 	for scanner.Scan() {
 		wordList = append(wordList, scanner.Text())
 	}
 
+	// do it again, but keep these words separate
 	scanner = bufio.NewScanner(bytes.NewBuffer([]byte(rawBadWordList)))
 	scanner.Split(bufio.ScanLines)
 
@@ -342,10 +372,6 @@ func parseWordLists() {
 }
 
 func formatGuess(guess string, clr bool) string {
-	if guess == "" {
-		return "     █ _ _ _ _"
-	}
-
 	// map and remove correct guesses
 	m := mapString(word)
 
@@ -356,7 +382,7 @@ func formatGuess(guess string, clr bool) string {
 	}
 
 	slots := make([]string, WordLength)
-
+	emoji := make([]rune, 0, WordLength)
 	for i := range guess {
 		if clr {
 			c := color.RedString
@@ -365,19 +391,26 @@ func formatGuess(guess string, clr bool) string {
 				discovered[i] = true // not elegant, but SUPER convenient
 
 				setKeyHint(rune(guess[i]), KeyHintLocated)
+				emoji = append(emoji, EmojiLocated)
 			} else if num := m[guess[i]]; num > 0 {
 				m[guess[i]]--
 				c = color.YellowString
 
 				setKeyHint(rune(guess[i]), KeyHintSomewhere)
+				emoji = append(emoji, EmojiSomewhere)
 			} else {
 				setKeyHint(rune(guess[i]), KeyHintNotInWord)
+				emoji = append(emoji, EmojiNotInWord)
 			}
 
 			slots[i] = c(string(guess[i]))
 		} else {
 			slots[i] = string(guess[i])
 		}
+	}
+
+	if clr {
+		emojiStack = append(emojiStack, string(emoji))
 	}
 
 	// add cursor and blanks
@@ -489,7 +522,7 @@ func (gs *GameStats) save() error {
 	return nil
 }
 
-func (gs *GameStats) print() {
+func (gs *GameStats) print(win *bool) {
 	fmt.Print("Game Stats")
 
 	if args.HardMode {
@@ -507,7 +540,10 @@ func (gs *GameStats) print() {
 		fmt.Printf("   Total Games: %d\n", gs.TotalHardGames)
 
 		if gs.TotalHardGames > 0 {
-			fmt.Printf("         Win %%: %.1f\n", float64(totalWins*10000/gs.TotalHardGames)/100)
+			rawPercent := float64(totalWins*10000/gs.TotalHardGames) / 100
+			strPercent := strconv.FormatFloat(rawPercent, 'f', 1, 64)
+			strPercent = strings.TrimRight(strPercent, ".0")
+			fmt.Printf("         Win %%: %s\n", strPercent)
 		} else {
 			fmt.Println("         Win %%: 0")
 		}
@@ -529,7 +565,10 @@ func (gs *GameStats) print() {
 		fmt.Printf("   Total Games: %d\n", gs.TotalGames)
 
 		if gs.TotalGames > 0 {
-			fmt.Printf("         Win %%: %.1f\n", float64(totalWins*10000/gs.TotalGames)/100)
+			rawPercent := float64(totalWins*10000/gs.TotalGames) / 100
+			strPercent := strconv.FormatFloat(rawPercent, 'f', 1, 64)
+			strPercent = strings.TrimRight(strPercent, ".0")
+			fmt.Printf("         Win %%: %s\n", strPercent)
 		} else {
 			fmt.Println("         Win %%: 0")
 		}
@@ -539,8 +578,38 @@ func (gs *GameStats) print() {
 		fmt.Println()
 		fmt.Println("Guess Distribution:")
 
+		// prepare histogram
+		hist := make([]float64, TotalGuesses)
+		max := float64(-1)
+
 		for i := 0; i < TotalGuesses; i++ {
-			fmt.Printf("%d: %d\n", i+1, gs.Wins[i])
+			hist[i] = float64(gs.Wins[i]) / float64(totalWins)
+			if max < hist[i] {
+				max = hist[i]
+			}
+		}
+
+		mult := MaxHistogramBarLength / max
+
+		// histogram
+		for i := 0; i < TotalGuesses; i++ {
+			fmt.Printf("%d: %d %s\n", i+1, gs.Wins[i], strings.Repeat("█", int(math.Min(MaxHistogramBarLength, hist[i]*mult))))
+		}
+
+		if gs.ExperimentalEmojiSupport && win != nil {
+			fmt.Println()
+
+			if *win {
+				fmt.Printf("Wordle %d %d/6\n", dayOffset, currentGuess+1)
+			} else {
+				fmt.Printf("Wordle %d X\n", dayOffset)
+			}
+
+			fmt.Println()
+
+			for _, line := range emojiStack {
+				fmt.Println(line)
+			}
 		}
 	}
 }
