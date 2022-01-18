@@ -30,4 +30,4 @@ release:
     name: wordle
   mode: replace
   header: |
-    ## Wordle ({{ .Version }})
+    ## Wordle ({{ .Date }})
