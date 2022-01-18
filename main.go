@@ -599,10 +599,15 @@ func (gs *GameStats) print(win *bool) {
 		if gs.ExperimentalEmojiSupport && win != nil {
 			fmt.Println()
 
+			hardInd := ""
+			if args.HardMode {
+				hardInd = "*"
+			}
+
 			if *win {
-				fmt.Printf("Wordle %d %d/6\n", dayOffset, currentGuess+1)
+				fmt.Printf("Wordle %d %d/6%s\n", dayOffset, currentGuess+1, hardInd)
 			} else {
-				fmt.Printf("Wordle %d X\n", dayOffset)
+				fmt.Printf("Wordle %d X/6%s\n", dayOffset, hardInd)
 			}
 
 			fmt.Println()
