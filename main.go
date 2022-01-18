@@ -383,6 +383,7 @@ func formatGuess(guess string, clr bool) string {
 
 	slots := make([]string, WordLength)
 	emoji := make([]rune, 0, WordLength)
+
 	for i := range guess {
 		if clr {
 			c := color.RedString
@@ -391,6 +392,7 @@ func formatGuess(guess string, clr bool) string {
 				discovered[i] = true // not elegant, but SUPER convenient
 
 				setKeyHint(rune(guess[i]), KeyHintLocated)
+
 				emoji = append(emoji, EmojiLocated)
 			} else if num := m[guess[i]]; num > 0 {
 				m[guess[i]]--
