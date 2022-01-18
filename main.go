@@ -128,13 +128,13 @@ func main() {
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 	since := (today.Unix() * 1000) - 1624082400000
 	dailyIndex := int(math.Round(float64(since) / 86400000))
-	dayOffset = dailyIndex - 1 // grab this for emoji Share
+	dayOffset = dailyIndex // grab this for emoji Share
 
 	// pick word
 	if shouldPlayDaily {
 		fmt.Println("   Daily Puzzle!")
 
-		dailyIndex = dailyIndex % len(wordList) // this isn't part of the original code, I just feel better with it
+		dailyIndex %= len(wordList) // this isn't part of the original code, I just feel better with it
 		word = wordList[dailyIndex]
 
 		gamestats.LastDaily = &today
