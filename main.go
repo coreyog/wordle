@@ -149,7 +149,7 @@ func main() {
 	initKeyboard()
 
 	if args.HardMode {
-		fmt.Println("Hard mode enabled. Guesses must use all revealed (green) hints.")
+		fmt.Println("     Hard Mode")
 	}
 
 	// prepare key listener
@@ -195,12 +195,12 @@ func main() {
 
 		stat.Finish()
 
-		if !win {
+		if !win && currentGuess != 0 {
 			gamestats.Streak = 0
 			_ = gamestats.save()
-		}
 
-		fmt.Printf("\nThe word was %s\n", word)
+			fmt.Printf("\nThe word was %s\n", word)
+		}
 
 		os.Exit(0)
 	}()
@@ -314,7 +314,7 @@ func main() {
 		fmt.Print("You win!\n\n")
 	} else {
 		gamestats.Streak = 0
-		fmt.Printf("The word was %s\n", word)
+		fmt.Printf("\nThe word was %s\n\n", word)
 	}
 
 	_ = gamestats.save()
@@ -525,95 +525,74 @@ func (gs *GameStats) save() error {
 }
 
 func (gs *GameStats) print(win *bool) {
+	// setup for easy mode
+	wins := gs.Wins
+	totalGames := gs.TotalGames
+	hardInd := ""
+
 	fmt.Print("Game Stats")
 
 	if args.HardMode {
 		fmt.Print(" (Hard Mode)")
+
+		wins = gs.HardWins
+		totalGames = gs.TotalHardGames
+
+		hardInd = "*"
 	}
 
-	fmt.Println()
+	fmt.Print("\n\n")
 
-	if args.HardMode {
-		totalWins := 0
-		for i := 0; i < TotalGuesses; i++ {
-			totalWins += gs.HardWins[i]
-		}
+	totalWins := 0
+	for i := 0; i < TotalGuesses; i++ {
+		totalWins += wins[i]
+	}
 
-		fmt.Printf("   Total Games: %d\n", gs.TotalHardGames)
+	fmt.Printf("   Total Games: %d\n", totalGames)
 
-		if gs.TotalHardGames > 0 {
-			rawPercent := float64(totalWins*10000/gs.TotalHardGames) / 100
-			strPercent := strconv.FormatFloat(rawPercent, 'f', 1, 64)
-			strPercent = strings.TrimRight(strPercent, ".0")
-			fmt.Printf("         Win %%: %s\n", strPercent)
-		} else {
-			fmt.Println("         Win %%: 0")
-		}
-
-		fmt.Printf("Current Streak: %d\n", gs.Streak)
-		fmt.Printf("   Best Streak: %d\n", gs.BestStreak)
-		fmt.Println()
-		fmt.Println("Guess Distribution:")
-
-		for i := 0; i < TotalGuesses; i++ {
-			fmt.Printf("%d: %d\n", i+1, gs.HardWins[i])
-		}
+	if totalGames > 0 {
+		rawPercent := float64(totalWins*10000) / float64(totalGames) / 100
+		strPercent := strconv.FormatFloat(rawPercent, 'f', 1, 64)
+		strPercent = strings.TrimRight(strPercent, "0")
+		strPercent = strings.TrimRight(strPercent, ".")
+		fmt.Printf("         Win %%: %s\n", strPercent)
 	} else {
-		totalWins := 0
-		for i := 0; i < TotalGuesses; i++ {
-			totalWins += gs.Wins[i]
+		fmt.Println("         Win %%: 0")
+	}
+
+	fmt.Printf("Current Streak: %d\n", gs.Streak)
+	fmt.Printf("   Best Streak: %d\n", gs.BestStreak)
+	fmt.Println()
+	fmt.Print("Guess Distribution:\n\n")
+
+	// prepare histogram
+	hist := make([]float64, TotalGuesses)
+	max := float64(-1)
+
+	for i := 0; i < TotalGuesses; i++ {
+		hist[i] = float64(wins[i]) / float64(totalWins)
+		if max < hist[i] {
+			max = hist[i]
 		}
+	}
 
-		fmt.Printf("   Total Games: %d\n", gs.TotalGames)
+	mult := MaxHistogramBarLength / max
 
-		if gs.TotalGames > 0 {
-			rawPercent := float64(totalWins*10000/gs.TotalGames) / 100
-			strPercent := strconv.FormatFloat(rawPercent, 'f', 1, 64)
-			strPercent = strings.TrimRight(strPercent, ".0")
-			fmt.Printf("         Win %%: %s\n", strPercent)
-		} else {
-			fmt.Println("         Win %%: 0")
-		}
-
-		fmt.Printf("Current Streak: %d\n", gs.Streak)
-		fmt.Printf("   Best Streak: %d\n", gs.BestStreak)
-		fmt.Println()
-		fmt.Println("Guess Distribution:")
-
-		// prepare histogram
-		hist := make([]float64, TotalGuesses)
-		max := float64(-1)
-
-		for i := 0; i < TotalGuesses; i++ {
-			hist[i] = float64(gs.Wins[i]) / float64(totalWins)
-			if max < hist[i] {
-				max = hist[i]
-			}
-		}
-
-		mult := MaxHistogramBarLength / max
-
-		// histogram
-		for i := 0; i < TotalGuesses; i++ {
-			fmt.Printf("%d: %d %s\n", i+1, gs.Wins[i], strings.Repeat("█", int(math.Min(MaxHistogramBarLength, hist[i]*mult))))
-		}
+	// histogram
+	for i := 0; i < TotalGuesses; i++ {
+		fmt.Printf("%d: %d %s\n", i+1, wins[i], strings.Repeat("█", int(math.Min(MaxHistogramBarLength, hist[i]*mult))))
 	}
 
 	if gs.ExperimentalEmojiSupport && win != nil {
 		fmt.Println()
 
-		hardInd := ""
-		if args.HardMode {
-			hardInd = "*"
-		}
+		turn := "X"
 
 		if *win {
-			fmt.Printf("Wordle %d %d/6%s\n", dayOffset, currentGuess+1, hardInd)
-		} else {
-			fmt.Printf("Wordle %d X/6%s\n", dayOffset, hardInd)
+			turn = strconv.Itoa(currentGuess + 1)
 		}
 
-		fmt.Println()
+		fmt.Printf("Wordle %d %s/6%s\n\n", dayOffset, turn, hardInd)
 
 		for _, line := range emojiStack {
 			fmt.Println(line)
