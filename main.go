@@ -597,26 +597,26 @@ func (gs *GameStats) print(win *bool) {
 		for i := 0; i < TotalGuesses; i++ {
 			fmt.Printf("%d: %d %s\n", i+1, gs.Wins[i], strings.Repeat("█", int(math.Min(MaxHistogramBarLength, hist[i]*mult))))
 		}
+	}
 
-		if gs.ExperimentalEmojiSupport && win != nil {
-			fmt.Println()
+	if gs.ExperimentalEmojiSupport && win != nil {
+		fmt.Println()
 
-			hardInd := ""
-			if args.HardMode {
-				hardInd = "*"
-			}
+		hardInd := ""
+		if args.HardMode {
+			hardInd = "*"
+		}
 
-			if *win {
-				fmt.Printf("Wordle %d %d/6%s\n", dayOffset, currentGuess+1, hardInd)
-			} else {
-				fmt.Printf("Wordle %d X/6%s\n", dayOffset, hardInd)
-			}
+		if *win {
+			fmt.Printf("Wordle %d %d/6%s\n", dayOffset, currentGuess+1, hardInd)
+		} else {
+			fmt.Printf("Wordle %d X/6%s\n", dayOffset, hardInd)
+		}
 
-			fmt.Println()
+		fmt.Println()
 
-			for _, line := range emojiStack {
-				fmt.Println(line)
-			}
+		for _, line := range emojiStack {
+			fmt.Println(line)
 		}
 	}
 }
