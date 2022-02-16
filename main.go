@@ -134,7 +134,7 @@ func main() {
 	if shouldPlayDaily {
 		fmt.Println("   Daily Puzzle!")
 
-		dailyIndex %= len(wordList) // this isn't part of the original code, I just feel better with it
+		dailyIndex %= len(wordList)
 		word = wordList[dailyIndex]
 
 		gamestats.LastDaily = &today
@@ -356,7 +356,7 @@ func parseWordLists() {
 	scanner.Split(bufio.ScanLines)
 
 	// read in words, we already know how many there are
-	wordList = make([]string, 0, 2315)
+	wordList = make([]string, 0, 2309)
 	for scanner.Scan() {
 		wordList = append(wordList, scanner.Text())
 	}
