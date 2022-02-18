@@ -123,20 +123,18 @@ func main() {
 
 	shouldPlayDaily := gamestats.LastDaily == nil || time.Since(*gamestats.LastDaily) > 24*time.Hour
 
-	// reconstructed from minified javascript with shortcuts to avoid Go's Dates
-	now := time.Now().UTC()
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	since := (today.Unix() * 1000) - 1624082400000
-	dailyIndex := int(math.Round(float64(since) / 86400000))
-	dayOffset = dailyIndex // grab this for emoji Share
+	// calculate day offset
+	dayOffset = int(time.Since(time.Date(2021, time.June, 19, 0, 0, 0, 0, time.UTC)).Hours() / 24)
 
 	// pick word
 	if shouldPlayDaily {
 		fmt.Println("   Daily Puzzle!")
 
-		dailyIndex %= len(wordList)
-		word = wordList[dailyIndex]
+		index := dayOffset % len(wordList)
+		word = wordList[index]
 
+		now := time.Now().UTC()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
 		gamestats.LastDaily = &today
 	} else {
 		rand.Seed(time.Now().UnixNano())
