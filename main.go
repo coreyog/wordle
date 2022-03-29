@@ -84,6 +84,7 @@ type GameStats struct {
 	BestStreak               int        `json:"best_streak"`
 	LastDaily                *time.Time `json:"last_daily"`
 	ExperimentalEmojiSupport bool       `json:"experimental_emoji_support"`
+	DefaultToHardMode        bool       `json:"default_to_hard_mode"`
 }
 
 type Arguments struct {
@@ -112,6 +113,10 @@ func main() {
 	}
 
 	gamestats := loadGameStats()
+
+	if gamestats.DefaultToHardMode {
+		args.HardMode = true
+	}
 
 	if args.PrintStats {
 		gamestats.print(nil)
