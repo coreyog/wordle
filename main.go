@@ -567,10 +567,18 @@ func (gs *GameStats) print(win *bool) {
 	hist := make([]float64, TotalGuesses)
 	max := float64(-1)
 
+	winPadding := 0
+
 	for i := 0; i < TotalGuesses; i++ {
 		hist[i] = float64(wins[i]) / float64(totalWins)
 		if max < hist[i] {
 			max = hist[i]
+		}
+
+		winWord := strconv.Itoa(wins[i])
+
+		if len(winWord) > winPadding {
+			winPadding = len(winWord)
 		}
 	}
 
@@ -578,7 +586,9 @@ func (gs *GameStats) print(win *bool) {
 
 	// histogram
 	for i := 0; i < TotalGuesses; i++ {
-		fmt.Printf("%d: %d %s\n", i+1, wins[i], strings.Repeat("█", int(math.Min(MaxHistogramBarLength, hist[i]*mult))))
+		count := strconv.Itoa(wins[i])
+		count = strings.Repeat(" ", winPadding-len(count)) + count
+		fmt.Printf("%d: %s %s\n", i+1, count, strings.Repeat("█", int(math.Min(MaxHistogramBarLength, hist[i]*mult))))
 	}
 
 	if gs.ExperimentalEmojiSupport && win != nil {
