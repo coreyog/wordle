@@ -23,3 +23,12 @@ Wordle 278 3/6*
 ```
 
 If you always play with hard mode enabled then you can update the config by setting `default_to_hard_mode` to `true` so that the next time you start a game, it'll behave like you passed the `-H` flag. This also affects the `-s` flag. With this config value set to `true`, it's impossible to start a standard game. If you would like to do that, you'll need to update the config again and set the value back to `false`.
+
+### Note to self about deploys:
+
+Once everything is checked in and ready for a release:
+
+    gitsem [major, minor, patch]
+    git push
+    goreleaser release
+    rm -rf dist
